@@ -427,3 +427,8 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# ClickCompare harness
+# Benchmark output (logs + BenchmarkDotNet html/csv/md reports) is regenerated and
+# environment-specific; curated findings live in the markdown investigation docs instead.
+results/

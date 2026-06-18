@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!-- We intentionally target ClickHouseBulkCopy/InitAsync (the exact API the investigation
+         measured) and keep it working across driver versions, so silence the deprecation noise. -->
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
+    <!-- Pin the driver here. Swap this single value (or pass -p:ClickHouseDriverVersion=)
+         to re-run the whole suite against another release. -->
+    <ClickHouseDriverVersion Condition="'$(ClickHouseDriverVersion)' == ''">1.2.0</ClickHouseDriverVersion>
+    <!-- CH.Native: 1.1.1 is the latest stable (1.1.2-* are prereleases). Swap to compare versions. -->
+    <CHNativeVersion Condition="'$(CHNativeVersion)' == ''">1.1.1</CHNativeVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClickHouse.Driver" Version="$(ClickHouseDriverVersion)" />
+    <PackageReference Include="CH.Native" Version="$(CHNativeVersion)" />
+    <PackageReference Include="Testcontainers.ClickHouse" Version="4.12.0" />
+  </ItemGroup>
+
+</Project>
