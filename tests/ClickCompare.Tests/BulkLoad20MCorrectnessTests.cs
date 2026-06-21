@@ -62,6 +62,11 @@ public class BulkLoad20MCorrectnessTests
             case BulkLoadRoute.ParquetCopyToServer:
                 await BulkLoadRunner.CopyChunksAsync(parquet, Chunks);
                 return 0;
+            case BulkLoadRoute.ParquetCopyBatchedToServer:
+                // The benchmark route only times the copy, but here also ingest from the batched
+                // location to prove the tar landed where file() can glob it.
+                await BulkLoadRunner.CopyChunksBatchedAsync(parquet, Chunks);
+                return await ParquetWorkload.FileIngestAsync(driver, total, BulkLoadRunner.BatchedGlobPattern);
             case BulkLoadRoute.ParquetCopyAndIngest:
                 await BulkLoadRunner.CopyChunksAsync(parquet, Chunks);
                 return await BulkLoadRunner.FileIngestAsync(driver, total);

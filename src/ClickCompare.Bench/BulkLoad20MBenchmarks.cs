@@ -53,6 +53,7 @@ public class BulkLoad20MBenchmarks
                 await BulkLoadRunner.CopyChunksAsync(_chunkParquet, Case.Chunks);
                 break;
             case BulkLoadRoute.ParquetCopyToServer:
+            case BulkLoadRoute.ParquetCopyBatchedToServer:
             case BulkLoadRoute.ParquetCopyAndIngest:
             case BulkLoadRoute.ParquetHttpSequential:
                 _chunkParquet = await ParquetWorkload.GenerateViaServerAsync(_http, Case.RowsPerChunk);
@@ -74,6 +75,7 @@ public class BulkLoad20MBenchmarks
     {
         BulkLoadRoute.ParquetFileIngest => await BulkLoadRunner.FileIngestAsync(_driver, Case.TotalRows),
         BulkLoadRoute.ParquetCopyToServer => await CopyOnlyAsync(),
+        BulkLoadRoute.ParquetCopyBatchedToServer => await CopyBatchedOnlyAsync(),
         BulkLoadRoute.ParquetCopyAndIngest => await CopyAndIngestAsync(),
         BulkLoadRoute.ParquetHttpSequential =>
             await BulkLoadRunner.HttpSequentialAsync(_http, _chunkParquet, Case.Chunks, Case.RowsPerChunk),
@@ -89,6 +91,12 @@ public class BulkLoad20MBenchmarks
     private async Task<long> CopyOnlyAsync()
     {
         await BulkLoadRunner.CopyChunksAsync(_chunkParquet, Case.Chunks);
+        return 0;
+    }
+
+    private async Task<long> CopyBatchedOnlyAsync()
+    {
+        await BulkLoadRunner.CopyChunksBatchedAsync(_chunkParquet, Case.Chunks);
         return 0;
     }
 

@@ -115,6 +115,24 @@ public static class ClickHouseFixture
             ct: ct);
     }
 
+    /// <summary>
+    /// Copy a whole host directory onto the server in a single Testcontainers call (one tar stream / one
+    /// Docker-API round trip), instead of N per-file calls. Same real transfer volume, minus the
+    /// per-file round-trip overhead — the honest way to speed up multi-file staging without resorting to
+    /// a bind mount (which would model local data, not a transfer). Lands the directory's contents under
+    /// <see cref="UserFilesPath"/>/<c>{leaf}</c> where <c>{leaf}</c> is the source directory's name.
+    /// </summary>
+    public static async Task CopyDirectoryToServerAsync(string hostDirectory, CancellationToken ct = default)
+    {
+        var container = _container ?? throw new InvalidOperationException(
+            "ClickHouseFixture.StartAsync() must be awaited before copying files to the server.");
+        await container.CopyAsync(
+            hostDirectory,
+            UserFilesPath,
+            fileMode: UnixFileModes.UserRead | UnixFileModes.UserWrite | UnixFileModes.GroupRead | UnixFileModes.OtherRead,
+            ct: ct);
+    }
+
     public static async Task DisposeAsync()
     {
         if (_container is not null)

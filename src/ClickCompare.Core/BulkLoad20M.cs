@@ -15,8 +15,11 @@ public enum BulkLoadRoute
     /// <summary>20 Parquet chunks already on the server's disk; one <c>file('…_*.parquet')</c> INSERT. Decode only.</summary>
     ParquetFileIngest,
 
-    /// <summary>Just the transfer: copy the 20 chunks (~172 MB) onto the server. The doc's <c>docker cp</c> leg, isolated.</summary>
+    /// <summary>Just the transfer: copy the 20 chunks (~172 MB) onto the server, one Testcontainers call per file. The doc's <c>docker cp</c> leg, isolated.</summary>
     ParquetCopyToServer,
+
+    /// <summary>Same transfer as <see cref="ParquetCopyToServer"/>, but one tar / one round trip for all chunks — measures whether the per-file overhead was worth removing.</summary>
+    ParquetCopyBatchedToServer,
 
     /// <summary>End-to-end: copy the 20 chunks onto the server, then the <c>file()</c> INSERT. The honest file-route number.</summary>
     ParquetCopyAndIngest,
@@ -59,7 +62,8 @@ public static class BulkLoadCases
         return new[]
         {
             new BulkLoadCase($"{p} Parquet file() ingest (on disk, decode only)", BulkLoadRoute.ParquetFileIngest, chunks, RowsPerChunk),
-            new BulkLoadCase($"{p} Parquet copy-to-server (copy only)", BulkLoadRoute.ParquetCopyToServer, chunks, RowsPerChunk),
+            new BulkLoadCase($"{p} Parquet copy-to-server (per-file, copy only)", BulkLoadRoute.ParquetCopyToServer, chunks, RowsPerChunk),
+            new BulkLoadCase($"{p} Parquet copy-to-server (batched tar, copy only)", BulkLoadRoute.ParquetCopyBatchedToServer, chunks, RowsPerChunk),
             new BulkLoadCase($"{p} Parquet copy + file() ingest (end-to-end)", BulkLoadRoute.ParquetCopyAndIngest, chunks, RowsPerChunk),
             new BulkLoadCase($"{p} Parquet HTTP POST (sequential, over wire)", BulkLoadRoute.ParquetHttpSequential, chunks, RowsPerChunk),
             new BulkLoadCase($"{p} CH.Native typed (1 streamed INSERT/chunk)", BulkLoadRoute.NativeSequential, chunks, RowsPerChunk),
@@ -79,12 +83,37 @@ public static class BulkLoadRunner
     public const string GlobPattern = "bulk_chunk_*.parquet";
     public static string ChunkName(int index) => $"bulk_chunk_{index}.parquet";
 
+    // Host staging dir for the batched copy. Testcontainers extracts a copied directory's *contents*
+    // flat into the target, so the chunks land directly under user_files/ — same glob as the per-file path.
+    public const string BatchedDir = "bulk_chunks";
+    public static string BatchedGlobPattern => GlobPattern;
+
     /// <summary>Copy one Parquet payload onto the server under N chunk names — the doc's ~181 MB
-    /// <c>docker cp</c> staging step.</summary>
+    /// <c>docker cp</c> staging step. One Testcontainers call per file (N Docker-API round trips).</summary>
     public static async Task CopyChunksAsync(byte[] chunkParquet, int chunks, CancellationToken ct = default)
     {
         for (var i = 0; i < chunks; i++)
             await ClickHouseFixture.CopyFileToServerAsync(chunkParquet, ChunkName(i), ct);
+    }
+
+    /// <summary>As <see cref="CopyChunksAsync"/> but stages the chunks into a host temp dir and ships them
+    /// in a single tar (one round trip). Strips the per-file Docker-API overhead while moving the same
+    /// bytes. Files land under <see cref="BatchedDir"/>, so ingest must glob <see cref="BatchedGlobPattern"/>.</summary>
+    public static async Task CopyChunksBatchedAsync(byte[] chunkParquet, int chunks, CancellationToken ct = default)
+    {
+        var hostDir = Path.Combine(Path.GetTempPath(), BatchedDir);
+        if (Directory.Exists(hostDir)) Directory.Delete(hostDir, recursive: true);
+        Directory.CreateDirectory(hostDir);
+        try
+        {
+            for (var i = 0; i < chunks; i++)
+                await File.WriteAllBytesAsync(Path.Combine(hostDir, ChunkName(i)), chunkParquet, ct);
+            await ClickHouseFixture.CopyDirectoryToServerAsync(hostDir, ct);
+        }
+        finally
+        {
+            Directory.Delete(hostDir, recursive: true);
+        }
     }
 
     /// <summary>One INSERT that globs every chunk already on disk — the server decodes all files in parallel.</summary>
