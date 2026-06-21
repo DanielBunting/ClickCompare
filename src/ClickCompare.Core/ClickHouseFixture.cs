@@ -1,4 +1,5 @@
 using ClickHouse.Driver.ADO;
+using DotNet.Testcontainers.Configurations;
 using Testcontainers.ClickHouse;
 
 namespace ClickCompare.Core;
@@ -18,9 +19,14 @@ public static class ClickHouseFixture
     /// <summary>The server user both clients authenticate as (Testcontainers' ClickHouse default).</summary>
     public static string Username => ClickHouseBuilder.DefaultUsername;
 
+    /// <summary>Where ClickHouse's <c>file()</c> table function resolves relative paths
+    /// (the server's <c>user_files_path</c>). The Parquet <c>file()</c> route copies fixtures here.</summary>
+    public const string UserFilesPath = "/var/lib/clickhouse/user_files";
+
     private static ClickHouseContainer? _container;
     private static string? _connectionString;
     private static string? _nativeConnectionString;
+    private static Uri? _httpUri;
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
     /// <summary>HTTP connection string for the clickhouse-cs client (ClickHouse.Driver, port 8123).</summary>
@@ -32,6 +38,12 @@ public static class ClickHouseFixture
     public static string NativeConnectionString =>
         _nativeConnectionString ?? throw new InvalidOperationException(
             "ClickHouseFixture.StartAsync() must be awaited before the connection string is read.");
+
+    /// <summary>Base HTTP URI (port 8123) for raw-body requests — the Parquet routes POST
+    /// pre-serialized payloads here, the way the investigation's <c>curl</c> legs did.</summary>
+    public static Uri HttpUri =>
+        _httpUri ?? throw new InvalidOperationException(
+            "ClickHouseFixture.StartAsync() must be awaited before the HTTP URI is read.");
 
     public static async Task StartAsync(CancellationToken ct = default)
     {
@@ -50,6 +62,8 @@ public static class ClickHouseFixture
 
             _connectionString = BuildHttpConnectionString(container);
             _nativeConnectionString = BuildNativeConnectionString(container);
+            _httpUri = new UriBuilder(
+                "http", container.Hostname, container.GetMappedPublicPort(ClickHouseBuilder.HttpPort)).Uri;
             _container = container;
         }
         finally
@@ -83,6 +97,24 @@ public static class ClickHouseFixture
         $"Database={ClickHouseBuilder.DefaultDatabase};" +
         "Compress=true";
 
+    /// <summary>
+    /// Drop <paramref name="content"/> onto the server's disk under <see cref="UserFilesPath"/>, so
+    /// <c>file('<paramref name="fileName"/>')</c> can bulk-load it. This is the Testcontainers analogue of
+    /// the investigation's <c>docker cp</c> step; for the end-to-end "copy + ingest" story the copy is the
+    /// off-box transfer, so callers that want that number must time this call, not just the ingest.
+    /// Mode 0644 so the (non-root) clickhouse server user can read what we (root) wrote.
+    /// </summary>
+    public static async Task CopyFileToServerAsync(byte[] content, string fileName, CancellationToken ct = default)
+    {
+        var container = _container ?? throw new InvalidOperationException(
+            "ClickHouseFixture.StartAsync() must be awaited before copying files to the server.");
+        await container.CopyAsync(
+            content,
+            $"{UserFilesPath}/{fileName}",
+            fileMode: UnixFileModes.UserRead | UnixFileModes.UserWrite | UnixFileModes.GroupRead | UnixFileModes.OtherRead,
+            ct: ct);
+    }
+
     public static async Task DisposeAsync()
     {
         if (_container is not null)
@@ -91,6 +123,7 @@ public static class ClickHouseFixture
             _container = null;
             _connectionString = null;
             _nativeConnectionString = null;
+            _httpUri = null;
         }
     }
 }

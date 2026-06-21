@@ -24,6 +24,11 @@ public sealed class WideBenchConfig : ManualConfig
     public static readonly long RowCount =
         long.TryParse(Environment.GetEnvironmentVariable("WIDE_ROWS"), out var n) && n > 0 ? n : 10_000_000;
 
+    /// <summary>Measured iterations. Defaults to 3 (fast); raise with <c>BENCH_ITERS</c> (e.g. 8) to
+    /// tighten the confidence interval on a close comparison.</summary>
+    public static readonly int Iterations =
+        int.TryParse(Environment.GetEnvironmentVariable("BENCH_ITERS"), out var i) && i > 0 ? i : 3;
+
     public WideBenchConfig()
     {
         AddJob(Job.Default
@@ -32,7 +37,7 @@ public sealed class WideBenchConfig : ManualConfig
             .WithInvocationCount(1)
             .WithUnrollFactor(1)
             .WithWarmupCount(1)
-            .WithIterationCount(3));
+            .WithIterationCount(Iterations));
 
         AddColumn(StatisticColumn.Median, StatisticColumn.Min, StatisticColumn.Max);
         AddExporter(MarkdownExporter.GitHub);
